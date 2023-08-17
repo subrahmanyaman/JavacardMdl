@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.android.javacard.mdl'
+    compileSdk 33
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+    defaultConfig {
+        minSdk 24
+        targetSdk 33
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'com.android.identity:identity-credential:20230420'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.9'
+    implementation 'androidx.appcompat:appcompat:1.4.1'
+    implementation 'com.google.android.material:material:1.5.0'
+    implementation files('libs/cbor.jar')
+    implementation files('libs/jcardsim.jar')
+    implementation files('libs/junit-4.13.jar')
+    implementation 'androidx.test.ext:junit:1.1.5'
+    testImplementation project(path: ':identity')
+    testImplementation project(path: ':identity')
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+}
