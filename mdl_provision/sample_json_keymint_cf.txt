@@ -1,0 +1,8 @@
+{
+   "attest_key": "test/attest_key.der",
+   "attest_cert_chain": [
+       "test/root_cert.der",
+       "test/intermediate_cert.der",
+       "test/attest_cert.der"
+   ]
+}
