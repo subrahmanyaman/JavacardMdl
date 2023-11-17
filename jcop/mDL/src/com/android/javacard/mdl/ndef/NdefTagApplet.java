@@ -1,7 +1,6 @@
 package com.android.javacard.mdl.ndef;
 
 import com.android.javacard.mdl.MdlService;
-import com.android.javacard.mdl.PresentationApplet;
 
 import javacard.framework.AID;
 import javacard.framework.APDU;
@@ -126,6 +125,8 @@ public class NdefTagApplet extends Applet implements ExtendedLength {
       // Payload - PAYLOAD OFFSET = FIXED PART size
   };
 */
+  public static final byte[] AID_MDL_DIRECT_ACCESS_APPLET = {
+      (byte) 0xA0, 0x00, 0x00, 0x02, 0x48, 0x04, 0x00};
   private short[] mSelectedFile;
   private byte[] mNdefDataFile;
   private AID mAid;
@@ -137,8 +138,8 @@ public class NdefTagApplet extends Applet implements ExtendedLength {
   }
 
   public NdefTagApplet(){
-    mAid = new AID(PresentationApplet.AID_MDL_DIRECT_ACCESS_APPLET, (short) 0,
-        (byte) PresentationApplet.AID_MDL_DIRECT_ACCESS_APPLET.length);
+    mAid = new AID(AID_MDL_DIRECT_ACCESS_APPLET, (short) 0,
+        (byte) AID_MDL_DIRECT_ACCESS_APPLET.length);
     mNdefDataFile =
         JCSystem.makeTransientByteArray(MAX_NDEF_DATA_FILE_SIZE, JCSystem.CLEAR_ON_DESELECT);
     mSelectedFile = JCSystem.makeTransientShortArray((short)(1), JCSystem.CLEAR_ON_DESELECT);;

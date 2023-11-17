@@ -2,20 +2,36 @@ package com.android.javacard.mdl;
 
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyBuilder;
-import javacard.security.KeyPair;
 
 // TODO this is a placeholder class until design is finalized. If KeyMint applet needs to be
 //  integrated then this class will be replaced by some shareable interface implemented by the
 //  KeyMint applet.
 public class X509CertHandler {
+  public static final byte ASN1_OCTET_STRING = 0x04;
+  public static final byte ASN1_SEQUENCE = 0x30;
+  public static final byte ASN1_SET = 0x31;
+  public static final byte ASN1_INTEGER = 0x02;
+  public static final byte OBJECT_IDENTIFIER = 0x06;
+  public static final byte ASN1_A0_TAG = (byte) 0xA0;
+  public static final byte ASN1_A1_TAG = (byte) 0xA1;
+  public static final byte ASN1_BIT_STRING = 0x03;
 
+  public static final byte ASN1_UTF8_STRING = 0x0C;
+  public static final byte ASN1_TELETEX_STRING = 0x14;
+  public static final byte ASN1_PRINTABLE_STRING = 0x13;
+  public static final byte ASN1_UNIVERSAL_STRING = 0x1C;
+  public static final byte ASN1_BMP_STRING = 0x1E;
+  public static final byte IA5_STRING = 0x16;
   private static final short KEYMINT_VERSION = 300;
   private static final byte STRONGBOX = 2;
   private static final short ATTESTATION_VERSION = 300;
+  private static final short SEQUENCE_TAG = (short)0x30;
+
   // Android Extn - 1.3.6.1.4.1.11129.2.1.17
   private static final byte[] androidExtn = {
       0x06, 0x0A, 0X2B, 0X06, 0X01, 0X04, 0X01, (byte) 0XD6, 0X79, 0X02, 0X01, 0X11
@@ -109,15 +125,6 @@ public class X509CertHandler {
   private static final byte[] credKeyCertCommon_2 = {
       0x30, 0x13, 0x06, 0x07, 0x2A,(byte) 0x86, 0x48, (byte)0xCE, 0x3D, 0x02, 0x01,
       0x06, 0x08, 0x2A,(byte) 0x86, 0x48, (byte)0xCE, 0x3D, 0x03, 0x01, 0x07,
-      /*
-      0x2A, 0x31, 0x28, 0x30, 0x26, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0C, 0x1F,
-      0x41, 0x6E, 0x64, 0x72, 0x6F, 0x69, 0x64, 0x20, 0x49, 0x64, 0x65, 0x6E,
-      0x74, 0x69, 0x74, 0x79, 0x20, 0x43, 0x72, 0x65, 0x64, 0x65, 0x6E, 0x74,
-      0x69, 0x61, 0x6C, 0x20, 0x4B, 0x65, 0x79, 0x30, 0x59, 0x30, 0x13, 0x06,
-      0x07, 0x2A, (byte)0x86, 0x48, (byte)0xCE, 0x3D, 0x02, 0x01, 0x06, 0x08, 0x2A, (byte)0x86,
-      0x48, (byte)0xCE, 0x3D, 0x03, 0x01, 0x07,
-
-       */
   };
   /**
    * signatureAlgorithm AlgorithmIdentifier SEQUENCE (1 elem)
@@ -127,7 +134,20 @@ public class X509CertHandler {
   private static final byte[] credKeyCertCommon_3 = {
       0x30, 0x0A, 0x06, 0x08, 0x2A, (byte)0x86, 0x48, (byte)0xCE, 0x3D, 0x04, 0x03, 0x02,
   };
-
+  /**
+   * signatureAlgorithm AlgorithmIdentifier SEQUENCE (1 elem)
+   *     algorithm OBJECT IDENTIFIER 1.2.840.10045.4.3.2 ecdsaWithSHA256
+   *                                               (ANSI X9.62 ECDSA algorithm with SHA256)
+   */
+  private static final byte[] ecdsaWithSHA256 = {
+      0x06, 0x08, 0x2A, (byte)0x86, 0x48, (byte)0xCE, 0x3D, 0x04, 0x03, 0x02,
+  };
+  private static final byte[] ecdsaWithSHA384 = {
+      0x06, 0x08, 0x2A, (byte)0x86, 0x48, (byte)0xCE, 0x3D, 0x04, 0x03, 0x03,
+  };
+  private static final byte[] ecdsaWithSHA512 = {
+      0x06, 0x08, 0x2A, (byte)0x86, 0x48, (byte)0xCE, 0x3D, 0x04, 0x03, 0x04,
+  };
   /**
    * Key usage extension only has digitalSignature but i.e. bit 0 enabled. Rest ofr the 7 buts
    * are unused.
@@ -184,7 +204,7 @@ public class X509CertHandler {
   static short mPublicKeyCertStart;
   static short mPublicKeyCertLength;
   private static ECPrivateKey mAttestKey;
-
+  private static short[] mRetVal;
 
   // Following methods are used to create certificates
   private static short pushBytes(byte[] stack, short stackPtr, short stackLen,
@@ -519,7 +539,8 @@ public class X509CertHandler {
     stackPtr = pushSequenceHeader(stack, stackPtr, stackLen, (short)(lastStackPtr -stackPtr));
     return stackPtr;
   }
-  public static short generateCredKeyCert(ECPublicKey credPubKey,
+  public static short generateCredKeyCert(SEProvider seProvider, 
+      ECPublicKey credPubKey,
       byte[] osVersion, short osVersionStart, short osVersionLen,
       byte[] osPatchLevel, short osPatchLevelStart, short osPatchLevelLen,
       byte[] challenge, short challengeStart, short challengeLen,
@@ -559,7 +580,7 @@ public class X509CertHandler {
     // push tbs header
     short tbsStart = pushSequenceHeader(buf, stackPtr, len, (short) (tbsEnd - stackPtr));
     // sign the tbs - this is ASN.1 encoded sequence of two integers.
-    short signLen = SEProvider.ecSign256(mAttestKey,
+    short signLen = seProvider.ecSign256(mAttestKey,
         buf,tbsStart,(short) (tbsEnd-tbsStart),scratch,
         (short) 0);
     // now push signature
@@ -593,18 +614,24 @@ public class X509CertHandler {
     mAttestKey = (ECPrivateKey) KeyBuilder
         .buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, KeyBuilder.LENGTH_EC_FP_256, false);
     mPublicKeyCertLength = mPublicKeyCertStart = mStorageIndex = 0;
+    mRetVal = JCSystem.makeTransientShortArray((short)16, JCSystem.CLEAR_ON_DESELECT);
   }
 
   public static void storeAttestationPublicKeyCert(byte[] buf, short start, short len){
     if(mDataStorage == null) return;
+    JCSystem.beginTransaction();
     mPublicKeyCertStart = mStorageIndex;
     mPublicKeyCertLength = len;
-    mStorageIndex = Util.arrayCopyNonAtomic(buf, start, mDataStorage, mStorageIndex, len);
+    Util.arrayCopyNonAtomic(buf, start, mDataStorage, mStorageIndex, len);
+    mStorageIndex = (short) (mStorageIndex + len);
+    JCSystem.commitTransaction();
   }
 
   public static void storeAttestationPrivateKey(byte[] buf, short start, short len){
     if(mDataStorage == null || mAttestKey == null) return;
+    JCSystem.beginTransaction();
     mAttestKey.setS(buf, start, len);
+    JCSystem.commitTransaction();
 
   }
 
@@ -682,7 +709,9 @@ public class X509CertHandler {
       0x08, 0x2A, (byte)0x86, 0x48, (byte)0xCE, 0x3D, 0x04, 0x03,  0x02,
   };
 
-  public static short generateSigningKeyCert(ECPublicKey signingPubKey, ECPrivateKey attestKey,
+  public static short generateSigningKeyCert(
+      SEProvider seProvider,
+      ECPublicKey signingPubKey, ECPrivateKey attestKey,
       byte[] notBefore, short notBeforeStart, short notBeforeLen,
       byte[] notAfter, short notAfterStart, short notAfterLen,
       byte[] buf, short start, short len,
@@ -716,7 +745,7 @@ public class X509CertHandler {
     // push tbs header
     short tbsStart = pushSequenceHeader(buf, stackPtr, len, (short) (tbsEnd - stackPtr));
     // sign the tbs - this is ASN.1 encoded sequence of two integers.
-    short signLen = SEProvider.ecSign256(attestKey,buf,tbsStart,(short) (tbsEnd-tbsStart),scratch,
+    short signLen = seProvider.ecSign256(attestKey,buf,tbsStart,(short) (tbsEnd-tbsStart),scratch,
         (short) 0);
     // now push signature
     short certEnd = stackPtr = (short) (signatureOffset + signLen + 3);
@@ -736,5 +765,434 @@ public class X509CertHandler {
     }
     return (short)(certEnd - stackPtr);
 
+  }
+
+  private static boolean matchAlg(byte[] buf, short start, short length, short alg){
+    byte[] dest = null;
+    switch(alg) {
+      case MdlSpecifications.ES256:
+        dest = ecdsaWithSHA256;
+        break;
+      case MdlSpecifications.ES384:
+        dest = ecdsaWithSHA384;
+        break;
+      case MdlSpecifications.ES512:
+        dest = ecdsaWithSHA512;
+        break;
+      default:
+        return false;
+    }
+    SEProvider.print(buf, start, length);
+    SEProvider.print(dest, (short) 0, length);
+    return length == (short)dest.length &&
+        (Util.arrayCompare(buf,start,dest,(short)0, (short)dest.length) == (short)0);
+  }
+
+
+
+  /**
+   * The following method does basic chain validation.
+   * 1) Extract tbs, keys, alg, signature from the chain. Also, check whether the last cert in
+   * the chain is self signed.
+   * 2) Check that alg requested in argument is supported by the key in the first certificate.
+   * 3) Then do the chain validation if there are more than one certificate
+   *
+   * TODO currently key usage validation is not done and also the root cert in the chain is not
+   *  validated as it is not clear whether the root cert will be self signed and if so whether it
+   *  needs to be validated or not.
+
+   */
+  public static boolean validateChain(MdocPresentationPkg doc,
+      byte[] buf, short[] tmpArray,
+      byte[] scratch, short scratchStart, short scratchLen) {
+    // store the alg
+    short alg = tmpArray[0];
+    // store the cert count
+    short count = tmpArray[1];
+    if(count <= 0) return false;
+    // point to the end of the chain i.e. root cert
+    short i = (short) ((short)(count * 2) + 2);
+    short attKeyStart = -1;
+    short attKeyLen = -1;
+    boolean foundAtLeastOneKey = false;
+    while(i > 2){
+      short certStart = tmpArray[--i];
+      short certLen = tmpArray[--i];
+      SEProvider.print(buf, certStart, certLen);
+      short certEnd = (short) (certStart + certLen);
+      // Now decode cert - this will return 4 parameters of the cert in mRetVal
+      decodeCert(buf, certStart, certEnd, mRetVal,
+          scratch,scratchStart,scratchLen);
+
+      if(doc.isMatchingReaderAuthKey(buf, mRetVal[5], mRetVal[6])){
+        foundAtLeastOneKey = true;
+      }
+      if(count > 1 && attKeyLen > 0 &&
+          !SEProvider.instance().validateEcDsaSign(buf,
+          mRetVal[1], mRetVal[2], // tbs
+          mRetVal[0], // alg
+          scratch, mRetVal[3], mRetVal[4], // sign
+          attKeyStart, attKeyLen // attestation key
+      )){
+        return false;
+      }
+      attKeyStart = mRetVal[5];
+      attKeyLen = mRetVal[6];
+    }
+    tmpArray[0] = attKeyLen;
+    tmpArray[1] = attKeyStart;
+    return foundAtLeastOneKey && alg == mRetVal[0];
+  }
+
+  private static short mapAlg(short alg){
+    switch(alg){
+      case MdlSpecifications.ES256:
+          return SEProvider.ES256;
+      case MdlSpecifications.ES384:
+        return SEProvider.ES384;
+      case MdlSpecifications.ES512:
+        return SEProvider.ES512;
+    }
+    return -1;
+  }
+
+  private static short readPublicKey(byte[] buf, short tbsStart, short tbsLen, short[] retVal) {
+    // public key is 7th field in the tbs cert
+    short tbsEnd = getNextTag(buf, tbsStart, tbsLen, retVal);
+    // go inside tbs skip till 7th field
+    short end = retVal[3]; //getNextTag(buf, retVal[3], retVal[2], retVal);
+    for(short i = 0; i < (short) 7;i++){
+      end = getNextTag(buf, end, tbsEnd, retVal);
+    }
+    // At this stage - retVal[0] points to Sequence start and retVal[3] points to ecPublicKey
+    // sequence.
+    short pubKeyEnd = end;
+    short pubKeyStart = retVal[0];
+    // Go inside the sequence of oid and alg
+    end = getNextTag(buf, retVal[3], end, retVal);
+    short keyBitStringStart = end;
+    // The first element in the sequence should be OID ecPublicKey
+    end = getNextTag(buf, retVal[3], end, retVal);
+    short len = (short) (end - retVal[0]);
+    if(len != (short) ecPublicKey.length || Util.arrayCompare(buf, retVal[0], ecPublicKey,(short)0,
+        len) != 0){
+      return -1;
+    }
+    // Now read the bit string. The value will be Bit string will start with byte which counts
+    // unused bits. This will always be zero in case of EC 256, 384 and 512 keys.
+    end = getNextTag(buf, keyBitStringStart, pubKeyEnd, retVal);
+
+    if(buf[retVal[3]] != 0){
+      return -1;
+    }
+    // skip the first byte
+    pubKeyStart = (short) (retVal[3] + 1);
+    pubKeyEnd = end;
+    retVal[0] = pubKeyStart;
+
+    return (short) (pubKeyEnd - pubKeyStart);
+  }
+
+  private final static byte[] ecPublicKey = {
+      0x06, 0x07, 0x2A, (byte)0x86, 0x48, (byte)0xCE, 0x3D, 0x02, 0x01,};
+
+
+  private static short mapAlg(byte[] buf, short start, short len){
+    if(matchAlg(buf, start, len, MdlSpecifications.ES256)){
+      return SEProvider.ES256;
+    }else if(matchAlg(buf, start, len, MdlSpecifications.ES384)){
+      return SEProvider.ES384;
+    } else if(matchAlg(buf, start, len, MdlSpecifications.ES512)){
+      return SEProvider.ES512;
+    }else{
+      return -1;
+    }
+  }
+
+  /**
+   *     retValues[0] = tagStart;
+   *     retValues[1] = tag;
+   *     retValues[2] = tagLen;
+   *     retValues[3] = tagValIndex;
+   */
+  private static short readSign(byte[] buf, short start, short end, short[] retVal,
+      byte[] scratch, short scratchStart, short scratchLen){
+    // Now read next tag
+    getNextTag(buf, start, (short)(end - start), retVal);
+    if(retVal[1] != ASN1_BIT_STRING){
+      return -1;
+    }
+    // first byte in the bit string should be zero in case of ecDSA signature as there should not
+    // be any unused bytes.
+    if(buf[retVal[3]] != 0){
+      return -1;
+    }
+    // skip one byte and decrement tag length by one.
+    retVal[3]++;
+    retVal[2]--;
+    short sign_end = getNextTag(buf, retVal[3], retVal[2], retVal);
+    short sign_start = retVal[0];
+    if(retVal[1] != ASN1_SEQUENCE){
+      return -1;
+    }
+    short sign_s_start = getNextTag(buf, retVal[3], retVal[2], retVal);
+    if(retVal[1] != ASN1_INTEGER){
+      return -1;
+    }
+    short sign_r_start = retVal[3];
+    short sign_r_len = retVal[2];
+    // As the signature is encoded as positive integer - the first byte may be 00. Remove that.
+    if(buf[sign_r_start] == 0){
+      sign_r_start++;
+      sign_r_len--;
+    }
+    getNextTag(buf, sign_s_start, sign_end, retVal);
+    if(retVal[1] != ASN1_INTEGER){
+      return -1;
+    }
+    sign_s_start = retVal[3];
+    short sign_s_len = retVal[2];
+    // As the signature is encoded as positive integer - the first byte may be 00. Remove that.
+    if(buf[sign_s_start] == 0){
+      sign_s_start++;
+      sign_s_len--;
+    }
+
+    short index = Util.arrayCopyNonAtomic(buf, sign_r_start, scratch, scratchStart, sign_r_len);
+    index = Util.arrayCopyNonAtomic(buf, sign_s_start, scratch, index, sign_s_len);
+    SEProvider.print(scratch, scratchStart, (short) (index - scratchStart));
+    return (short) (index - scratchStart);
+  }
+  private static short readAlg(byte[] buf, short start, short end, short[] retVal){
+    short len = (short)(end - start);
+
+    // Now read next tag
+    short index = getNextTag(buf, start, len, retVal);
+    SEProvider.print(buf, start, (short) (index - start));
+    if(retVal[1] != ASN1_SEQUENCE){
+      return -1;
+    }
+    // Compare with alg
+    retVal[1] = mapAlg(buf,retVal[3], retVal[2]);
+    return index;
+  }
+  private static short readTbs(byte[] buf, short start, short end, short[] retVal){
+    short len = (short)(end - start);
+    getNextTag(buf, start, len ,retVal);
+    if(retVal[1] != ASN1_SEQUENCE){
+      return -1;
+    }
+    // Go inside the sequence and read tbs
+    short index = getNextTag(buf, retVal[3], retVal[2],retVal);
+    if(retVal[1] != ASN1_SEQUENCE){
+      return -1;
+    }
+    return index;
+  }
+  private static boolean decodeCert(byte[] buf, short certStart, short certEnd, short[] retVal,
+      byte[] scratch, short scratchStart, short scratchLen){
+    short tbsEnd = readTbs(buf, certStart, certEnd, retVal);
+    if(tbsEnd < 0) return false;
+    short tbsStart = retVal[0];
+    short algEnd = readAlg(buf, tbsEnd, certEnd, retVal);
+    if(algEnd < 0) return false;
+    short alg = retVal[1];
+    short signLen = readSign(buf, algEnd , certEnd, retVal,
+        scratch, scratchStart, scratchLen);
+    short signStart = scratchStart;
+    short publicKeyLen = readPublicKey(buf, tbsStart, tbsEnd, retVal);
+    short publicKeyStart = retVal[0];
+    retVal[0] = alg;
+    retVal[1] = tbsStart;
+    retVal[2] = (short) (tbsEnd - tbsStart);
+    retVal[3] = signStart;
+    retVal[4] = signLen;
+    retVal[5] = publicKeyStart;
+    retVal[6] = publicKeyLen;
+    return true;
+  }
+
+  /**
+   * Read Tag id from the BER TLV object. In FiraApplet the tag id will only be one or two bytes long.
+   * if the tag id is more than 2 bytes then ISO7816.SW_WRONG_DATA exception is thrown.
+   * @param buf - buffer of data
+   * @param index - start index
+   * @param len - length of the buffer
+   * @param retValues - The retValues[0] will return tag.
+   * @return index pointing at the length field of the TLV object.
+   */
+  public static short readBERTag(byte[] buf, short index, short len, short[] retValues){
+    if(len == 0) return (short)-1;
+    if ((buf[index] & 0x1F) != 0x1F) { // 1 byte tag
+      retValues[0] = (short)(buf[index] & 0x00FF);
+    } else if ((buf[(short) (index + 1)] & 0x80) == 0) { //2 bytes
+      retValues[0]= javacard.framework.Util.getShort(buf, index);
+      index++;
+    } else { // more than 2 bytes
+      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    }
+    index++;
+    return index;
+  }
+  /**
+   * Read Tag length from the BER TLV object. In FiraApplet the tag length will at maximum will be
+   * 2 bytes long i.e. 32K. if the tag length is more than 2 bytes then ISO7816.SW_WRONG_LENGTH
+   * exception is thrown.
+   * @param buf - buffer of data
+   * @param index - start index
+   * @param len - length of the buffer
+   * @param retValues - The retValues[0] will return tag length.
+   * @return index pointing at start of the value field of the TLV object.
+   */
+  public static short readBERLength(byte[] buf, short index, short len, short[] retValues){
+    retValues[0] = (short)-1;
+    if(len == 0) return (short)-1;
+    // If length is negative then there is n bytes of length ahead.
+    // If length is positive then length is between 0 - 127.
+    if (buf[index] < 0) {
+      byte numBytes = (byte) (buf[index] & 0x7F);
+      if (numBytes == 2) {
+        index++;
+        retValues[0] = Util.getShort(buf, index);
+        index++;
+      } else if (numBytes == 1) {
+        index++;
+        retValues[0] = (short)(buf[index] & 0x00FF);
+      }else{
+        ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+      }
+    } else {
+      retValues[0] = (short)(buf[index] & 0x00FF);
+    }
+    index++;
+    return index;
+  }
+  /**
+   * Read the BER TLV object pointed by index. If TLV object is larger than the len of the buffer
+   * then ISO7816.SW_WRONG_LENGTH exception is thrown.
+   * @param buf - buffer of data
+   * @param index - start index
+   * @param len - length of the buffer
+   * @param retValues The returned data of the TLV object.
+   *  - retValues[0] - start index of TLV object
+   *  - retValues[1] - tag id.
+   *  - retValues[2] - tag length
+   *  - retValues[3] = start index of TLV value field.
+   * @return index pointing at start of the next byte following the end of TLV object.
+   */
+  public static short getNextTag(byte[] buf, short index, short len, short[] retValues){
+    if(len == 0) return (short)-1;
+    retValues[0] = retValues[1]= retValues[2]=retValues[3]=0;
+    short end = (short)(index + len);
+    short tagStart = index;
+    short tag;
+    short tagLen;
+    short tagValIndex;
+    if(len == 0) return index;
+    if(len < 0){
+      ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+    }
+    index = readBERTag(buf, index, len, retValues);
+    tag = retValues[0];
+    index = readBERLength(buf, index, len, retValues);
+    tagLen = retValues[0];
+    tagValIndex = index;
+    index += tagLen;
+    if(index > end) {
+      ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+    }
+    retValues[0] = tagStart;
+    retValues[1] = tag;
+    retValues[2] = tagLen;
+    retValues[3] = tagValIndex;
+    return index;
+  }
+  /**
+   * Read the BER TLV object pointed by index and matching the tag in the buffer. If TLV object is
+   * larger than the len of the buffer then ISO7816.SW_WRONG_LENGTH exception is thrown.
+   * @param tag - desired tag id
+   * @param buf - buffer of data
+   * @param index - start index
+   * @param len - length of the buffer
+   * @param skip - if true then skip the receding 0xFFs and 0s.
+   * @param retValues The returned data of the TLV object.
+   *  - retValues[0] - start index of TLV object
+   *  - retValues[1] - tag id.
+   *  - retValues[2] - tag length
+   *  - retValues[3] = start index of TLV value field.
+   * @return index pointing at start of the next byte following the end of the desired TLV object.
+   * If the tag is not present in the buffer than the FIRASpecs.INVALID_VALUE is returned
+   */
+  public static short getTag(short tag, byte[] buf, short index, short len, boolean skip,
+      short[] retValues){
+    if(len == 0) return (short)-1;
+    short end = (short)(index + len);
+    while(index < end){
+      index = getNextTag(buf, index, (short)(end - index), retValues);
+      if(retValues[1] == tag){
+        return index;
+      }
+    }
+    return (short)-1;
+  }
+  public static short traverseChain(short parentTag, short tag, byte[] val, short valStart,
+      short valLen,
+      byte[] mem, short index, short len, short[] retValues) {
+    short end = (short) (index + len); // end of the credentials.
+    // Read the key sets one by one - index points to beginning of the key set and the end points to
+    // end of all the key sets.
+    SEProvider.print(mem,index,len);
+    while ( index != (short)-1 && index < end) {
+      // read the tag
+      index = getNextTag(mem, index, (short)(end - index),  retValues);
+      // Is the tag parent tag or any tag.
+      if (index != (short)-1 &&
+          (parentTag == (short)-1 || parentTag == retValues[1])) {
+        short curParentStart = retValues[0];
+        short curParentTag = retValues[1];
+        short curParentLen = retValues[2];
+        short curParentVal = retValues[3];
+        // Go inside the current tag
+        // find the tag value in this tag
+        short tagEnd = getTag(tag, mem, curParentVal, curParentLen, false, retValues);
+        // Compare the returned value with the given value
+        if (tagEnd != (short)-1 && valLen == retValues[2] &&
+            Util.arrayCompare(val, valStart, mem, retValues[3],valLen) == 0) {
+          retValues[0] = curParentStart;
+          retValues[1] = curParentTag;
+          retValues[2] = curParentLen;
+          retValues[3] = curParentVal;
+          return index;
+        }
+      }
+    }
+    return (short)-1;
+  }
+  public static short convertCoseSign1SignatureToAsn1(
+      byte[] input, short offset, short len,
+      byte[] scratchPad, short scratchPadOff, short scratchLen) {
+    // SEQ [ INTEGER(r), INTEGER(s)]
+    // write from bottom to the top
+    if(len != 64 && len != 128 && len != 256){
+      ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+    }
+    short stackLen = (short) (len + 12);
+    if(stackLen > scratchLen) return -1;
+    short stackPtr = (short) (scratchPadOff + stackLen + 1);
+    short end = stackPtr;
+    short dataLen = (short)(len /2);
+
+    // write s.
+    stackPtr = pushInteger(scratchPad,stackPtr,stackLen,input,(short) (offset + dataLen), dataLen);
+    // write r
+    stackPtr = pushInteger(scratchPad,stackPtr,stackLen,input,offset, dataLen);
+    short length = (short) (end - stackPtr);
+    stackPtr = pushSequenceHeader(scratchPad,stackPtr,stackLen,length);
+    length = (short) (end - stackPtr);
+    if (stackPtr != scratchPadOff) {
+      // re adjust the buffer
+      Util.arrayCopyNonAtomic(scratchPad, stackPtr, scratchPad, scratchPadOff, length);
+    }
+    return length;
   }
 }
