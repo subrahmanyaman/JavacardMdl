@@ -5,9 +5,6 @@ import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 
 import com.android.javacard.keymaster.KMJCardSimApplet;
-import com.android.javacard.mdl.NdefTagApplet;
-import com.android.javacard.mdl.PresentationApplet;
-import com.android.javacard.mdl.ProvisioningApplet;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 import static com.android.jcserver.config.*;
@@ -26,9 +23,6 @@ public class JCardSimulator implements Simulator {
     private ResponseAPDU response;
     private Vector<String> channelAid;
     private int currentChannel;
-    private AID ndefApplet;
-    private AID presentationApplet;
-    private AID provisioningApplet;
 
     public JCardSimulator() {
         // Creating an empty Vector 
@@ -44,18 +38,12 @@ public class JCardSimulator implements Simulator {
     public void initaliseSimulator() throws Exception {
         // Create simulator
         simulator = new CardSimulator();
-        ndefApplet = AIDUtil.create(NdefTagApplet.AID_NDEF_TAG_APPLET);
-        presentationApplet = AIDUtil.create(PresentationApplet.AID_MDL_DIRECT_ACCESS_APPLET);
-        provisioningApplet = AIDUtil.create(ProvisioningApplet.DIRECT_ACCESS_PROVISIONING_APPLET_ID);
     }
 
     @Override
     public void disconnectSimulator() throws Exception {
-        //AID appletAID1 = AIDUtil.create(keymasterAid);
-        //simulator.deleteApplet(appletAID1);
-        simulator.deleteApplet(provisioningApplet);
-        simulator.deleteApplet(presentationApplet);
-        simulator.deleteApplet(ndefApplet);
+        AID appletAID1 = AIDUtil.create(keymasterAid);
+        simulator.deleteApplet(appletAID1);
     }
 
     private void installKeymaster() throws JCOPException {

@@ -36,7 +36,8 @@ public class JCServer {
         }
         targetNames = targetName.split(",");
         for (String name : targetNames) {
-            if (!(name.equals("fira") || name.equals("keymaster") || name.equals("weaver"))) {
+            if (!(name.equals("fira") || name.equals("keymaster") || name.equals("weaver") || 
+            		name.equals("mdl"))) {
                 System.out.println("Target name must be either 'fira' or 'keymaster' or 'Weaver");
                 return;
                 }

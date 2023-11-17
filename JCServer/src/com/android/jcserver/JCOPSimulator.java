@@ -40,6 +40,10 @@ public class JCOPSimulator implements Simulator {
                 WEAVER_PKG_AID);
     	openCardSim.installApplet(getAbsolutePath(capPath+"/"+CAP_WEAVER_CORE), WEAVER_CORE_AID,
                 WEAVER_CORE_PKG_AID);
+    }
+    
+    private void installMdl(String capPath) throws JCOPException {
+      // TODO
     } 
 
     private void installFira() throws JCOPException {
@@ -68,6 +72,8 @@ public class JCOPSimulator implements Simulator {
 					//installWeaver(pathToCapFiles);
 					openCardSim.selectApplet(WEAVER_AID);
 					break;
+				case "mdl":
+					openCardSim.selectApplet(MDL_PROVISIONING_APPLET_AID);
 				default:
 					// Ignore already handled in main function
 					break;

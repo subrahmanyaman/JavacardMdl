@@ -29,6 +29,12 @@ public class config {
             Utils.hexStringToByteArray("A000000476575652434F4D4D30");
     public static final byte[] WEAVER_CORE_AID = 
             Utils.hexStringToByteArray("A000000476575652434F524530010101");
+    public static final byte[] MDL_PRESENTATION_APPLET_AID = {
+    	      (byte) 0xA0, 0x00, 0x00, 0x02, 0x48, 0x04, 0x00};
+    public static final byte[] NMDL_DEF_TAG_APPLET_AID = {
+    	      (byte) 0xD2, 0x76, 0x00, 0x00, (byte) 0x85, 0x01, 0x01};
+    public static final byte[] MDL_PROVISIONING_APPLET_AID = {
+    	      (byte) 0xA0, 0x00, 0x00, 0x02, 0x48, 0x04, 0x00, 0x01, 0x01, 0x01};
     public static final String CAP_SEPRIVIDER = "seprovider.cap";
     public static final String CAP_KEYMASTER = "keymaster.cap";
     public static final String CAP_WEAVER = "weaver.cap";
