@@ -5,6 +5,9 @@ import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 
 import com.android.javacard.keymaster.KMJCardSimApplet;
+import com.android.javacard.mdl.NdefTagApplet;
+import com.android.javacard.mdl.PresentationApplet;
+import com.android.javacard.mdl.ProvisioningApplet;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 import static com.android.jcserver.config.*;
@@ -62,6 +65,17 @@ public class JCardSimulator implements Simulator {
 
     private void installFira() throws JCOPException {
     }
+    
+    private void installMdl() throws Exception {
+    	AID ndefApplet = AIDUtil.create(NdefTagApplet.AID_NDEF_TAG_APPLET);
+    	AID presentationApplet = AIDUtil.create(PresentationApplet.AID_MDL_DIRECT_ACCESS_APPLET);
+    	AID provisioningApplet = AIDUtil.create(ProvisioningApplet.DIRECT_ACCESS_PROVISIONING_APPLET_ID);
+    	simulator.installApplet(ndefApplet, NdefTagApplet.class);
+        simulator.installApplet(presentationApplet, PresentationApplet.class);
+        simulator.installApplet(provisioningApplet, ProvisioningApplet.class);
+        
+        simulator.selectApplet(provisioningApplet);
+    }
 
     @Override
     public void setupSimulator(String[] target, String pathToCapFiles) throws Exception {
@@ -77,6 +91,9 @@ public class JCardSimulator implements Simulator {
             case "weaver":
                 installWeaver();
                 break;
+            case "mdl":
+            	installMdl();
+            	break;
             default:
                 // Ignore already handled in main function
                 break;
