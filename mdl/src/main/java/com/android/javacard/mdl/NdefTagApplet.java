@@ -18,6 +18,8 @@ import javacardx.apdu.ExtendedLength;
 public class NdefTagApplet extends Applet implements ExtendedLength {
   public static final byte[] AID_NDEF_TAG_APPLET = {
       (byte) 0xD2, 0x76, 0x00, 0x00, (byte) 0x85, 0x01, 0x01};
+  public static final byte[] AID_MDL_DIRECT_ACCESS_APPLET = {
+      (byte) 0xA0, 0x00, 0x00, 0x02, 0x48, 0x04, 0x00};
   static final short MAX_NDEF_DATA_FILE_SIZE = 1024;
   static final short STATUS_WORD_END_OF_FILE_REACHED = 0x6282;
   static final byte INS_SELECT = ISO7816.INS_SELECT;
@@ -134,8 +136,8 @@ public class NdefTagApplet extends Applet implements ExtendedLength {
   }
 
   public NdefTagApplet(){
-    mAid = new AID(PresentationApplet.AID_MDL_DIRECT_ACCESS_APPLET, (short) 0,
-        (byte) PresentationApplet.AID_MDL_DIRECT_ACCESS_APPLET.length);
+    mAid = new AID(AID_MDL_DIRECT_ACCESS_APPLET, (short) 0,
+        (byte) AID_MDL_DIRECT_ACCESS_APPLET.length);
     mNdefDataFile =
         JCSystem.makeTransientByteArray(MAX_NDEF_DATA_FILE_SIZE, JCSystem.CLEAR_ON_DESELECT);
     mSelectedFile = JCSystem.makeTransientShortArray((short)(1), JCSystem.CLEAR_ON_DESELECT);;
@@ -190,9 +192,8 @@ public class NdefTagApplet extends Applet implements ExtendedLength {
         MdlService mdl = (MdlService) JCSystem.getAppletShareableInterfaceObject(mAid,
             MdlService.SERVICE_ID);
         short payloadLength = mdl.getHandoverSelectMessage(mNdefDataFile, (short) 2);
-        // Set the length of the NDEF File which includes payload and preceding two bytes for
-        // the file length
-        Util.setShort(mNdefDataFile, (short) 0, (short) (payloadLength + 2));
+        // Set the length of payload
+        Util.setShort(mNdefDataFile, (short) 0, payloadLength);
         mSelectedFile[0] = FILE_ID_NDEF_FILE;
         break;
       default:
@@ -213,8 +214,9 @@ public class NdefTagApplet extends Applet implements ExtendedLength {
     short offset = Util.getShort(buf, ISO7816.OFFSET_P1);
     byte[] file = mSelectedFile[0] == FILE_ID_NDEF_FILE ? mNdefDataFile : CAPS_CONTAINER;
 
-    short contentLen = Util.getShort(file,(short)0);
-    if (offset < 0 || offset >= contentLen) {
+    // Include the two bytes of ndef message/payload length field.
+    short fileLen = (short) (Util.getShort(file,(short)0) + 2);
+    if (offset < 0 || offset >= fileLen) {
       ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
     }
     short size = apdu.setOutgoing();
@@ -223,7 +225,7 @@ public class NdefTagApplet extends Applet implements ExtendedLength {
     if( (short)(offset + size) < 0){
       ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
     }
-    if((short)(offset + size) > contentLen) {
+    if((short)(offset + size) > fileLen) {
       ISOException.throwIt(STATUS_WORD_END_OF_FILE_REACHED);
     }
     apdu.setOutgoingLength(size);

@@ -9,7 +9,6 @@ import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 
 public class MdocPresentationPkg {
-  public final static short MAX_MDOC_SIZE = (short) 0x7FFF;
   public final static short MAX_DATA_ITEMS = (byte) 32;
   public final static short ELEM_KEY_ID_OFFSET = 0;
   public final static short ELEM_START_OFFSET = 1;
@@ -26,13 +25,6 @@ public class MdocPresentationPkg {
   public final static byte MAX_NS_COUNT = 1;
   public final static byte NS_TABLE_ROW_SIZE = 3;
   public final static byte NS_TABLE_SIZE = (byte) (MAX_NS_COUNT * NS_TABLE_ROW_SIZE);
-  public static final byte ITEM_KEY_OFFSET = 0;
-  public static final byte ITEM_START = 1;
-  public static final byte ITEM_LENGTH = 2;
-  public static final byte ITEM_ROW_SIZE = 3;
-  public static final byte MAX_ALLOWED_SIGNING_KEYS = 5;
-  private static final short HEADER_SIZE = (short) 256;
-  private static final short DATA_ENTRIES_INDEX = (short) 32;
   private short mUsageCount;
   private boolean mPreAllocatedMem;
 
@@ -121,11 +113,11 @@ public class MdocPresentationPkg {
   }
 
   public short findElementEntry(short nsIndex, short elemId){
-    short elemStart = (short) (mNsTable[nsIndex + NS_START_OFFSET]);
+    short elemStart = (short) (mNsTable[(short)(nsIndex + NS_START_OFFSET)]);
     short elemEnd =
-        (short) (elemStart + mNsTable[nsIndex + NS_END_OFFSET]);
+        (short) (elemStart + mNsTable[(short)(nsIndex + NS_END_OFFSET)]);
     for(short i = elemStart; i < elemEnd; i+=ELEM_TABLE_ROW_SIZE){
-      if(mElementTable[i + ELEM_KEY_ID_OFFSET] == elemId){
+      if(mElementTable[(short)(i + ELEM_KEY_ID_OFFSET)] == elemId){
         return i;
       }
     }
@@ -162,8 +154,8 @@ public class MdocPresentationPkg {
     if (elem >= mElementTableSize) {
       return 0;
     }
-    short remainingBytes = (short) (mElementTable[elem + ELEM_START_OFFSET] +
-        mElementTable[elem + ELEM_LENGTH_OFFSET] - elemDataPtr);
+    short remainingBytes = (short) (mElementTable[(short)(elem + ELEM_START_OFFSET)] +
+        mElementTable[(short)(elem + ELEM_LENGTH_OFFSET)] - elemDataPtr);
     if (remainingBytes > len) {
       remainingBytes = len;
     }
@@ -309,13 +301,33 @@ public class MdocPresentationPkg {
         Util.arrayCompare(buf, start, mHeap,mDocTypeStart, mDocTypeLen) == 0;
   }
   public boolean isReaderAuthRequired(){
-    return mReaderAccessKeysStart >= 0;
+    mDecoder.init(mHeap, mReaderAccessKeysStart, mReaderAccessKeysLen);
+    short count = mDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+    return count > 0;
   }
   public short getDocType(byte[] buf, short start){
     Util.arrayCopyNonAtomic(mHeap, mDocTypeStart, buf, start, mDocTypeLen);
     return mDocTypeLen;
   }
-  public short[] getNameSpaces(){
-    return mNsTable;
+
+  public boolean isMatchingReaderAuthKey(byte[] buf, short start, short len) {
+    try {
+      mDecoder.init(mHeap, mReaderAccessKeysStart, mReaderAccessKeysLen);
+      SEProvider.print(mHeap, mReaderAccessKeysStart, mReaderAccessKeysLen);
+      short count = mDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+      for (short i = 0; i < count; i++) {
+        short keyLen = mDecoder.readMajorType(CBORBase.TYPE_BYTE_STRING);
+        short keyStart = mDecoder.getCurrentOffset();
+        SEProvider.print(mHeap, keyStart, keyLen);
+        if(len == keyLen &&
+            Util.arrayCompare(buf, start, mHeap, keyStart, len) == 0){
+          return true;
+        }
+        mDecoder.increaseOffset(keyLen);
+      }
+    }catch(ISOException exp){
+      return false;
+    }
+    return false;
   }
 }

@@ -26,7 +26,7 @@ public class Context {
   public static final byte CURRENT_DATA_PTR_END = 5;
   static final byte MAX_DOC_REQUESTS = 2;
   // Buffer related metadata
-  static final short MAX_BUF_SIZE = 5096;
+  public static final short MAX_BUF_SIZE = 5096;
   public short[] mIncrementalResponseState;
   Object[] mDocumentRequests;
   // Stores the request message from the reader and response message to reader. The size is equal

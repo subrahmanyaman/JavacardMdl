@@ -1,6 +1,5 @@
 package com.android.javacard.mdl;
 
-import com.android.javacard.mdl.jcardsim.SEProvider;
 import javacard.framework.APDU;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
@@ -24,6 +23,11 @@ public class Session {
   static final byte DEVICE_ENGAGEMENT_START = 4;
   static final byte DEVICE_ENGAGEMENT_LEN = 6;
   final static byte BUF_LENGTH_OFFSET = 16;
+
+  static final byte CIPHER_OP_BEGIN = 0;
+  static final byte CIPHER_OP_UPDATE = 1;
+  static final byte CIPHER_OP_FINISH = 2;
+
   // Reader Encoded Bytes - COSE key size + 4 bytes for semantic tag and binary str tags + 2
   // bytes of len field
   static final short READER_ENC_KEY_BYTES_BUF_SIZE = 81;
@@ -38,7 +42,7 @@ public class Session {
   static KeyAgreement mKeyAgreement;
   static ECPublicKey mEReaderKeyPub;
   static byte[] mReaderEncodedKeyBytes;
-  static byte[] mSessionTranscript;
+  static byte[] mSessionTranscriptBytes;
   // Stores the device engagement information i.e. handover select message. The first 8 bytes are:
   // Start and length of handover select msg, Start and length of device engagement followed by
   // handover select msg that includes device engagement structure.
@@ -77,7 +81,7 @@ public class Session {
     mEReaderKeyPub = (ECPublicKey) KeyBuilder.buildKey(
         KeyBuilder.TYPE_EC_FP_PUBLIC,
         KeyBuilder.LENGTH_EC_FP_256, false);
-    mSessionTranscript = JCSystem.makeTransientByteArray(
+    mSessionTranscriptBytes = JCSystem.makeTransientByteArray(
         MdlSpecifications.MAX_SESSION_TRANSCRIPT_SIZE,
         JCSystem.CLEAR_ON_DESELECT);
     mHmacSigner =   Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
@@ -86,7 +90,7 @@ public class Session {
   }
 
   public static void reset(){
-    Util.arrayFillNonAtomic(mSessionTranscript,(short)0,
+    Util.arrayFillNonAtomic(mSessionTranscriptBytes,(short)0,
         MdlSpecifications.MAX_SESSION_TRANSCRIPT_SIZE, (byte)0);
     //TODO reset keys
   }
@@ -98,10 +102,6 @@ public class Session {
         mReaderEncodedKeyBytes, (short) 2,
         Util.getShort(mReaderEncodedKeyBytes, (short) 0),
         MdlSpecifications.KEY_EREADER_KEY, mStructure);
-
-//    if((short)(offset - 2) != Util.getShort(mReaderEncodedKeyBytes, (short) 0)) {
-//      ISOException.throwIt(ISO7816.SW_DATA_INVALID);
-//    }
     short xCordOffset = mStructure[4];
     short xCordLen = mStructure[5];
     short yCordOffset = mStructure[6];
@@ -116,10 +116,7 @@ public class Session {
         offset);
     offset += copyByteString(mReaderEncodedKeyBytes,yCordOffset,yCordLen,scratchPad,
         offset);
-//    offset = Util.arrayCopyNonAtomic(mReaderEncodedKeyBytes,xCordOffset,scratchPad,offset,
-//        xCordLen);
-//    offset = Util.arrayCopyNonAtomic(mReaderEncodedKeyBytes,yCordOffset, scratchPad,offset,
-//        yCordLen);
+
     SEProvider.print(scratchPad, scratchOffset,(short) (offset - scratchOffset));
     mEReaderKeyPub.clearKey();
     mEReaderKeyPub.setW(scratchPad, scratchOffset,(short) (offset - scratchOffset));
@@ -138,7 +135,7 @@ public class Session {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
     }
     // Then generate session transcript and salt which is used by all further derivations.
-    encodeSessionTranscript(mSessionTranscript, mHandover, mReaderEncodedKeyBytes);
+    encodeSessionTranscript(mSessionTranscriptBytes, mHandover, mReaderEncodedKeyBytes);
     try {
       // Create reader ephemeral key used for ECDH shared secret generation
       readerKey(scratchPad, scratchOff, scratchLen);
@@ -153,8 +150,8 @@ public class Session {
       short pubLen = 0;
       Util.arrayFillNonAtomic(scratchPad, scratchOff, (short) 256, (byte)0);
       // Generate salt
-      saltLen = messageDigestSha256(mSessionTranscript, (short) 2,
-          Util.getShort(mSessionTranscript, (short) 0),
+      saltLen = messageDigestSha256(mSessionTranscriptBytes, (short) 2,
+          Util.getShort(mSessionTranscriptBytes, (short) 0),
           mSalt, (short)0);
       if(saltLen != 32){
         ISOException.throwIt(ISO7816.SW_UNKNOWN);
@@ -198,38 +195,6 @@ public class Session {
        //   mHmacSigner, scratchPad, scratchOff);
       // At this stage signer has digested session specific data. Further same signer is used to
       // digest data elements in device response.
-/*
-      // Derive encryption key using hkdf algorithm. Note we only require 32 byte key i.e.
-      // L = 32.
-      // First generate prk.
-      mHmacKey.setKey(scratchPad, saltStart, saltLen);
-      mHmacSigner.init(mHmacKey, Signature.MODE_SIGN);
-      prkLen = mHmacSigner.sign(scratchPad, secretStart, secretLen, scratchPad, prkStart);
-      SEProvider.print(scratchPad, prkStart, prkLen);
-      // Now expand the prk. In out case N = L/DigestLEn = 32/32 = 1. Thus, we have only one
-      // iteration i.e. T[1] = T[0] || info || counter, where T[0] is zero length.
-
-      mHmacKey.setKey(scratchPad, prkStart, prkLen);
-      mHmacSigner.init(mHmacKey,Signature.MODE_SIGN);
-      // derive device key
-      mHmacSigner.update(
-          MdlSpecifications.deviceSecretInfo,(short)0, (short) MdlSpecifications.deviceSecretInfo.length);
-      scratchPad[prkStart] = (byte)1;//(byte)mMsgCounter[DEVICE_MSG_COUNTER];
-      prkLen = mHmacSigner.sign(scratchPad, prkStart, (byte)1, scratchPad, prkStart);
-      System.out.println("Device Side Device Symmetric Key:");
-      SEProvider.print(scratchPad, prkStart, prkLen);
-      mDeviceKey.setKey(scratchPad, prkStart);
-
-      // derive reader key
-      mHmacSigner.update(
-          MdlSpecifications.readerSecretInfo,(short)0, (short) MdlSpecifications.readerSecretInfo.length);
-      scratchPad[prkStart] = (byte)1;//(byte)mMsgCounter[READER_MSG_COUNTER];
-      prkLen = mHmacSigner.sign(scratchPad, prkStart, (byte)1, scratchPad, prkStart);
-      System.out.println("Device Side Reader Symmetric Key:");
-      SEProvider.print(scratchPad, prkStart, prkLen);
-      mReaderKey.setKey(scratchPad, prkStart);
-
-  */
 
     }catch (Exception exp){
       ISOException.throwIt(ISO7816.SW_UNKNOWN);
@@ -359,7 +324,7 @@ public class Session {
   }
 
   static boolean isSessionInitialized(){
-    return Util.getShort(mSessionTranscript, (short)0) > 0;
+    return Util.getShort(mSessionTranscriptBytes, (short)0) > 0;
   }
   static short encryptDecryptData(byte[] mBuffer, short dataStart,
       short dataLen, AESKey key, short counter, boolean encrypt,
@@ -369,54 +334,19 @@ public class Session {
     short scratchLen = retVal[1];
     short nonceLen = generateNonce(counter, scratch, scratchStart);
     if(encrypt){
-      return SEProvider.aesGCMEncryptOneShot(
+      return SEProvider.instance().aesGCMEncryptOneShot(
           key,mBuffer,dataStart,dataLen,mBuffer,
           dataStart,
           scratch,
           scratchStart,nonceLen,null,(short)0, (short)0, justUpdate);
     }else{
-      return SEProvider.aesGCMDecryptOneShot(key,mBuffer,dataStart,dataLen,mBuffer,
+      return SEProvider.instance().aesGCMDecryptOneShot(key,mBuffer,dataStart,dataLen,mBuffer,
           dataStart,scratch,
           scratchStart,nonceLen,null,(short)0, (short)0, justUpdate);
     }
   }
-  static final byte CIPHER_OP_BEGIN = 0;
-  static final byte CIPHER_OP_UPDATE = 1;
-  static final byte CIPHER_OP_FINISH = 2;
 
-  static short encryptDataIncrementally(byte[] buf, short start, short len,
-      byte[] scratch, short scratchStart, short scratchLen,
-      short counter, byte op){
-    if (op == CIPHER_OP_BEGIN) {
-      short nonceLen = generateNonce(counter, scratch, scratchStart);
-        mSEProvider.beginAesGcmOperation(mDeviceKey, true,
-          scratch, scratchStart, nonceLen,
-          null, (short)0, (short) 0);
-      // We are now ready to add credential data and encrypt it which will come in update and
-      // finish calls.
-      // Encrypt the current data. The encrypted data can be less than the input data if it is
-      // not block aligned.
-      short end = mSEProvider.encryptDecryptInPlace(buf, start, len,
-          scratch, scratchStart, scratchLen);
-      len = (short)(end - start);
-    }else if(op == CIPHER_OP_FINISH){
-      // Encrypts the remaining data, and it will also have auth tag appended at the end.
-      // Encrypt
-      short end = mSEProvider.encryptDecryptInPlace(buf, start, len,
-          scratch, scratchStart, scratchLen);
-      end += mSEProvider.doAesGcmOperation(buf,end,(short)0,buf,end, false);
-      len = (short)(end - start);
-    }else if(op == CIPHER_OP_UPDATE){
-      // Update operation encrypts the data and sends it back to client.
-      // Encrypt
-      short end = mSEProvider.encryptDecryptInPlace(buf, start, len,
-          scratch, scratchStart, scratchLen);
-      len = (short)(end - start);
-    }else{
-      ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
-    }
-    return len;
-  }
+
   static void beginIncrementalEncryption(short counter, byte[] scratch, short scratchStart,
       short scratchLen){
     Util.arrayFillNonAtomic(scratch,scratchStart,SEProvider.AES_GCM_NONCE_LENGTH,(byte)0);
@@ -479,12 +409,7 @@ public class Session {
     mDecoder.init(buffer,start,len);
     len = mDecoder.readMajorType(CBORBase.TYPE_BYTE_STRING);
     short offset = mDecoder.getCurrentOffset();
-    // TODO Change
-//    short offset = readCborTypeAndLength(buffer, start, len, MdlSpecifications.CBOR_SEMANTIC_TAG,
-//        mRetVal);
-//    offset = readCborTypeAndLength(buffer, offset, len, MdlSpecifications.CBOR_BINARY_STR,
-//        mRetVal);
-//    len = mRetVal[0];
+
     short[] type = MdlSpecifications.getStructure(keyId);
     offset = MdlSpecifications.decodeStructure(type, structure, buffer,offset, len);
     //TODO introduce fixed value in structure decoding rule - this eliminate need for the
@@ -495,18 +420,6 @@ public class Session {
         structure[6] == 0 || structure[7] != 34){
       ISOException.throwIt(ISO7816.SW_DATA_INVALID);
     }
-//    mDecoder.init(buffer,mStructure[4], mStructure[5]);
-//    mStructure[5] = mDecoder.readMajorType(CBORBase.TYPE_BYTE_STRING);
-//    mStructure[4] = mDecoder.getCurrentOffset();
-    //structure[4] = readCborTypeAndLength(buffer, structure[4],MdlSpecifications.CBOR_BINARY_STR,
-    //    mRetVal);
-    //mStructure[5] = mRetVal[0];
-//    mDecoder.init(buffer,mStructure[6], mStructure[7]);
-//    mStructure[6] = mDecoder.readMajorType(CBORBase.TYPE_BYTE_STRING);
-//    mStructure[7] = mDecoder.getCurrentOffset();
-//    structure[6] = readCborTypeAndLength(buffer, structure[6],MdlSpecifications.CBOR_BINARY_STR,
-//        mRetVal);
-//    mStructure[7] = mRetVal[0];
     return offset;
   }
 
@@ -580,4 +493,5 @@ public class Session {
     }
     return mBuffer[BUF_LENGTH_OFFSET];
   }
+
 }

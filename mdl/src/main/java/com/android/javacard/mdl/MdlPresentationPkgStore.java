@@ -11,9 +11,7 @@ import javacard.framework.Shareable;
  *
  */
 public interface MdlPresentationPkgStore extends Shareable {
-
   MdocPresentationPkg findPackage(byte[] id, short start, short len);
-
   short getMaxSlotCount();
   MdocPresentationPkg getPackage(byte slot);
   short getMaxPackageSize();

@@ -1,8 +1,10 @@
 package com.android.javacard.mdl;
 
-import com.android.javacard.mdl.jcardsim.SEProvider;
+import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.AESKey;
+import javacard.security.ECPrivateKey;
+import javacard.security.ECPublicKey;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 
@@ -20,7 +22,10 @@ public class Mdoc {
   private boolean mReserved;
   private short mSlotId;
   private boolean mProvisioned;
+  private boolean[] mTestCred;
   public Mdoc(short slotId){
+    mTestCred = JCSystem.makeTransientBooleanArray((short)1, JCSystem.CLEAR_ON_DESELECT);
+    mTestCred[0] = false;
     mSlotId = slotId;
     mCredentialKey = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
     mStorageKey = (AESKey) KeyBuilder.buildKey(
@@ -53,13 +58,21 @@ public class Mdoc {
     mStorageKey.setKey(scratch, start);
     ProvisioningApplet.createPackage(mSlotId, size);
   }
-  public void delete() {
+  public void delete(byte[] scratch, short start, short len) {
+    mTestCred[0] = false;
+    ECPublicKey pub = ((ECPublicKey)mCredentialKey.getPublic());
+    ECPrivateKey priv = ((ECPrivateKey)mCredentialKey.getPrivate());
+    short size = pub.getW(scratch,start);
+    Util.arrayFillNonAtomic(scratch, start, size,(byte)0);
+    pub.setW(scratch,start,size);
+    size = priv.getS(scratch,start);
+    Util.arrayFillNonAtomic(scratch, start, size,(byte)0);
+    priv.setS(scratch,start,size);
     mStorageKey.clearKey();
-    mCredentialKey.getPublic().clearKey();
-    mCredentialKey.getPrivate().clearKey();
     ProvisioningApplet.deletePackage(mSlotId);
   }
   public void enableTestCred(byte[] scratch, short start, short len) {
+    mTestCred[0] = true;
     mStorageKey.clearKey();
     Util.arrayFillNonAtomic(scratch,start,(short) 32, (byte)0);
     mStorageKey.setKey(scratch, start);
@@ -77,5 +90,8 @@ public class Mdoc {
   }
   public boolean isProvisioned() {
     return mProvisioned;
+  }
+  public boolean isTestCredential(){
+    return mTestCred[0];
   }
 }

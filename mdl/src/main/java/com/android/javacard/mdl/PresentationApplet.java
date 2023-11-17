@@ -1,6 +1,5 @@
 package com.android.javacard.mdl;
 
-import com.android.javacard.mdl.jcardsim.SEProvider;
 import javacard.framework.AID;
 import javacard.framework.JCSystem;
 import javacard.framework.Shareable;
@@ -51,7 +50,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
       // 1. Handover Select Record - size = 3 + 2 + 17 = 22
       // Refer nfcCalculateHandover in com.android.identity.PresentationHelper
       // NDEF Header
-      (byte) 0b10010001, //MB=1, ME=0, CF=0, SR=1, IL=0, TNF= 1 (Well Known Type)
+      (byte) 0x91, //MB=1, ME=0, CF=0, SR=1, IL=0, TNF= 1 (Well Known Type)
       // Lengths
       (byte) 2, // length of "Hs" type
       (byte) 17, //Size of "Hs" payload
@@ -61,7 +60,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
       0x15, // Major and Minor Version of connection handover specs i.e. 1.5
       // Alternative Carrier Record - only one record
       // NDEF Header
-      (byte) 0b11010001, //MB=1, ME=1, CF=0, SR=1, IL=0, TNF= 1 (Well Known Type)
+      (byte) 0xD1, //MB=1, ME=1, CF=0, SR=1, IL=0, TNF= 1 (Well Known Type)
       // Lengths
       (byte) 2, // length of "ac" type
       (byte) 11, //Size of "ac" payload
@@ -81,7 +80,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
       // 2. "nfc" Carrier Configuration Record - size = 4 +17 + 9 + 3 = 33
       // Refer to createNdefRecord method in com.android.identity.DataTransferNfc
       // NDEF Header
-      (byte) 0b00011010, //MB=0, ME=0, CF=0, SR=1, IL=1, TNF= 2 (MIME)
+      (byte) 0x1C, //MB=0, ME=0, CF=0, SR=1, IL=1, TNF= 4 (External)
       // Lengths
       (byte) 17, // length of "iso.org:18013:nfc" type
       (byte) 9, //Size of payload
@@ -104,7 +103,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
       // 3. "mdoc" NDEF Record - start = 33 + 22 + 2= 57
       // Refer nfcCalculateHandover in com.android.identity.PresentationHelper
       // NDEF Header - HEADER OFFSET = PAYLOAD_LEN_OFFSET - 2
-      (byte) 0b01011100, //MB=0, ME=0, CF=0, SR=1, IL=1, TNF= 4 (External)
+      (byte) 0x5C, //MB=0, ME=0, CF=0, SR=1, IL=1, TNF= 4 (External)
       // Lengths
       (byte) 30, // length of "iso.org:18013:deviceengagement" type
       //Size of Payload - PAYLOAD_LEN_OFFSET = PAYLOAD OFFSET - MDOC_ID_LEN - MDOC_TYPE_LEN - 2
@@ -167,7 +166,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     mScratchPad = JCSystem.makeTransientByteArray((short) 512, JCSystem.CLEAR_ON_DESELECT);
     mContext.init(JCSystem.makeTransientByteArray(Context.MAX_BUF_SIZE, JCSystem.CLEAR_ON_DESELECT));
     mRetVal = JCSystem.makeTransientShortArray((short) 5, JCSystem.CLEAR_ON_DESELECT);
-    mStructure = JCSystem.makeTransientShortArray((short) 30, JCSystem.CLEAR_ON_DESELECT);
+    mStructure = JCSystem.makeTransientShortArray((short) 128, JCSystem.CLEAR_ON_DESELECT);
     mRetVal = JCSystem.makeTransientShortArray((short) 10, JCSystem.CLEAR_ON_DESELECT);
     mStructure = JCSystem.makeTransientShortArray((short) 10, JCSystem.CLEAR_ON_DESELECT);
     mMsgCounter = JCSystem.makeTransientShortArray((short) 2, JCSystem.CLEAR_ON_RESET);
@@ -193,13 +192,14 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     while (i > 0) {
       mRetVal[--i] = INVALID_VALUE;
     }
+    mMsgCounter[(short)0] = mMsgCounter[(short)1] = 1;
   }
   private PresentationApplet() {
   }
 
   @Override
   public void deselect() {
-    terminateSession();
+    reset();
   }
 
   @Override
@@ -211,7 +211,6 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     if (apdu.isSecureMessagingCLA()) {
       ISOException.throwIt(ISO7816.SW_SECURE_MESSAGING_NOT_SUPPORTED);
     }
-    SEProvider.assertApdu(apdu);
     // process commands to the applet
     if (apdu.isISOInterindustryCLA()) {
       switch (buffer[ISO7816.OFFSET_INS]) {
@@ -231,6 +230,83 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
   private void resetBuffer() {
     Util.arrayFillNonAtomic(mContext.mBuffer, (short) 0, (short) mContext.mBuffer.length, (byte) 0);
   }
+  private static void handleSessionEst(APDU apdu, byte[] buf,
+      short readerKeyStart, short readeKeyLen,
+      short devReqStart, short devReqLen){
+    // then both the reader's key and encrypted device request must be present
+    if (readerKeyStart == 0 || devReqStart == 0) {
+      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    }
+    // Copy the encoded reader key into class variable.
+    Util.arrayCopyNonAtomic(buf, readerKeyStart, Session.mReaderEncodedKeyBytes,
+        (short) 2, readeKeyLen);
+    Util.setShort(Session.mReaderEncodedKeyBytes, (short) 0, readeKeyLen);
+    // Extract the enc data offsets and length
+    mDecoder.init(buf, devReqStart, devReqLen);
+    short encDataLen = mDecoder.readMajorType(CBORBase.TYPE_BYTE_STRING);
+    short encDataStart = mDecoder.getCurrentOffset();
+    // compute session transcript and mCryptoKey
+    Session.computeSessionDataAndSecrets();
+    encDataLen = decryptSessionData(buf, encDataStart, encDataLen);
+    handleDeviceRequestAndSendResponse(apdu, buf, encDataStart, encDataLen);
+  }
+  private static void handleSessionData(APDU apdu, byte[] buf,
+      short statusStart, short statusLen,
+      short dataStart, short dataLen) {
+    // either encrypted data or status must be present
+    // - but both cannot be absent or present at the same time.
+    if (((statusStart == 0) == (dataStart == 0)) ||
+        ((statusStart != 0) && (statusLen != 1))) {
+      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    }
+    // Is the status present
+    if (statusStart != 0) { // If the status is sent then there should
+      // Check the status
+      short status = buf[statusStart];
+      if (status == (short) 20 ||
+          status == (short) 10 ||
+          status == (short) 11) {
+        // terminate the session,.
+        reset();
+        sendSuccessResponseForSessionTermination(apdu);
+      } else { // invalid data is present.
+        ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+      }
+    } else {
+      // Session is established, so decrypt and process the data. Then send the response
+      // Extract the enc data offsets and length
+      mDecoder.init(buf, dataStart, dataLen);
+      short encDataLen = mDecoder.readMajorType(CBORBase.TYPE_BYTE_STRING);
+      short encDataStart = mDecoder.getCurrentOffset();
+      encDataLen = decryptSessionData(buf, encDataStart, encDataLen);
+      handleDeviceRequestAndSendResponse(apdu, buf, encDataStart, encDataLen);
+    }
+  }
+  private static short decryptSessionData(byte[] buf,
+      short encDataStart, short encDataLen) {
+    // Decrypt the data
+    System.out.println("Device Side Cipher text with size " + encDataLen + " bytes:");
+    SEProvider.print(buf, encDataStart, encDataLen);
+    encDataLen = Session.encryptDecryptData(buf, encDataStart, encDataLen,
+        Session.mReaderKey, mMsgCounter[READER_MSG_COUNTER], false, mRetVal, false);
+    System.out.println("Device Side Plain text with size " + encDataLen + " bytes:");
+    SEProvider.print(buf, encDataStart, encDataLen);
+    // Successfully decrypted and hence increment the reader message counter
+    mMsgCounter[READER_MSG_COUNTER]++;
+    return encDataLen;
+  }
+    private static void handleDeviceRequestAndSendResponse(APDU apdu, byte[] buf, short dataStart, short dataLen){
+      // Process the device request.
+      mContext.mDocumentsCount[0] = (byte) processDeviceRequest(
+          buf, dataStart, dataLen, mContext.mDocumentRequests);
+      //If there are no requests.
+      if (mContext.mDocumentsCount[0] <= 0) {
+        sendSuccessResponseWithoutDocs(apdu);
+      } else {
+        // Send the response.
+        processGetResponse(apdu, true);
+      }
+  }
 
   // Process the envelope
   // 1. Receive all the data. This can consist on multiple APDUs. Internal buffer must be big
@@ -247,7 +323,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     // extract the request from 0x53 tag
     short bufIndex = extractRequest(mContext.mBuffer, (short) mContext.mBuffer.length, mRetVal);
     short bufLen = mRetVal[0];
-    com.android.javacard.mdl.jcardsim.SEProvider.print(mContext.mBuffer, bufIndex, bufLen);
+    com.android.javacard.mdl.SEProvider.print(mContext.mBuffer, bufIndex, bufLen);
     short requestType = Session.isSessionInitialized() ? MdlSpecifications.IND_SESSION_DATA :
         MdlSpecifications.IND_SESSION_ESTABLISHMENT;
     short offset = MdlSpecifications.decodeStructure(MdlSpecifications.getStructure(requestType),
@@ -255,62 +331,15 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     if (offset < 0 || offset != (short) (bufIndex + bufLen)) {
       ISOException.throwIt(ISO7816.SW_DATA_INVALID);
     }
-    // Extract the cbor binary string
-    mDecoder.init(mContext.mBuffer, mStructure[2], mStructure[3]);
-    short encDataLen = mDecoder.readMajorType(CBORBase.TYPE_BYTE_STRING);
-    short encDataStart = mDecoder.getCurrentOffset();
-
     // If this is the session establishment
     if (requestType == MdlSpecifications.IND_SESSION_ESTABLISHMENT) {
-      // then both the reader's key and encrypted device request must be present
-      if (mStructure[0] == INVALID_VALUE || encDataStart == INVALID_VALUE) {
-        ISOException.throwIt(ISO7816.SW_WRONG_DATA);
-      }
-      // Copy the encoded reader key into class variable.
-      Util.arrayCopyNonAtomic(mContext.mBuffer, mStructure[0], Session.mReaderEncodedKeyBytes,
-          (short) 2, mStructure[1]);
-      Util.setShort(Session.mReaderEncodedKeyBytes, (short) 0, mStructure[1]);
-      // creates session transcript and mCryptoKey
-      Session.computeSessionDataAndSecrets();
-    } else {
-      // else the reader's key must be absent and either encrypted data or status must be present
-      // - but both cannot be absent or present at the same time.
-      if ((mStructure[0] == INVALID_VALUE) == (
-          mStructure[2] == INVALID_VALUE)) {
-        ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+      handleSessionEst(apdu, mContext.mBuffer, mStructure[0], mStructure[1],
+          mStructure[2], mStructure[3]);
+    } else { //this is session data
+      handleSessionData(apdu, mContext.mBuffer, mStructure[0], mStructure[1],
+          mStructure[2], mStructure[3]);
       }
     }
-
-    // Session is established, so decrypt and process the data. Then send the response
-    if (encDataStart != INVALID_VALUE) {
-      // Decrypt the data
-      System.out.println("Device Side Cipher text with size " + encDataLen + " bytes:");
-      SEProvider.print(mContext.mBuffer, encDataStart, encDataLen);
-      encDataLen = Session.encryptDecryptData(mContext.mBuffer, encDataStart, encDataLen,
-          Session.mReaderKey, mMsgCounter[READER_MSG_COUNTER], false, mRetVal, false);
-      System.out.println("Device Side Plain text with size " + encDataLen + " bytes:");
-      SEProvider.print(mContext.mBuffer, encDataStart, encDataLen);
-      mMsgCounter[READER_MSG_COUNTER]++;
-
-      // Process the device request.
-      mContext.mDocumentsCount[0] = (byte) processDeviceRequest(
-          mContext.mBuffer, encDataStart, encDataLen, mContext.mDocumentRequests);
-      //If there are no requests.
-      if(mContext.mDocumentsCount[0] <= 0){
-        sendSuccessResponseWithoutDocs(apdu);
-      }else {
-        // Send the response.
-        processGetResponse(apdu, true);
-      }
-    } else if (mStructure[1] == (short) 0x20 ||
-        mStructure[1] == (short) 0x10 ||
-        mStructure[1] == (short) 0x11) {
-      // error status is present, so terminate the session,.
-      terminateSession();
-    } else { // invalid data is present.
-      ISOException.throwIt(ISO7816.SW_DATA_INVALID);
-    }
-  }
 
   /**
    * This method creates Device response with only version and status elements. Status will be
@@ -349,16 +378,51 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     sendBytes(apdu, (short)0, (short) (index + encLen), ISO7816.SW_NO_ERROR);
   }
 
+  /**
+   * SessionData = {
+   *   "status" : uint ; Status code
+   * }
+   *
+   */
+  private static void sendSuccessResponseForSessionTermination(APDU apdu) {
+    if (mContext.mChunkSize[0] != 0) {
+      ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+    }
+    byte[] buf = apdu.getBuffer();
+    short index = 0;
+    short le = apdu.setOutgoing();
+    // encode the response
+    mEncoder.init(mScratchPad, (short) 0, (short) mScratchPad.length);
+    mEncoder.startMap((short) 1);
+    //"status" : uint
+    mEncoder.encodeRawData(MdlSpecifications.status,
+        (short) 0, (short) MdlSpecifications.status.length);
+    mEncoder.encodeUInt8((byte)20);
+
+
+    // add envelope header
+    buf[index++] = (byte) 0x53;
+    buf[index++] = (byte) (2 + MdlSpecifications.status.length);
+    // Add status
+    mEncoder.init(buf, index, le);
+    // Map of one element
+    mEncoder.startMap((short) 1);
+    //"status" : uint
+    mEncoder.encodeRawData(MdlSpecifications.status,
+        (short) 0, (short) MdlSpecifications.status.length);
+    // status of 20 i.e. session termination
+    mEncoder.encodeUInt8((byte)20);
+    index = mEncoder.getCurrentOffset();
+    SEProvider.print(buf, (short)0, index);
+    sendBytes(apdu, (short)0, index, ISO7816.SW_NO_ERROR);
+  }
+
   private static void addDocumentErrorsToResponse() {
     //TODO use mDeviceRequest to generate documentError in mBuffer. Send that first followed by
     // document
   }
 
-  private static boolean processReaderAuth(byte[] buf, short itemsStart, short itemsLen,
-      short readerAuth, short readerAuthLen) {
-    //TODO complete this
-    return true;
-  }
+
 
   // Process Device Request
   //
@@ -423,12 +487,12 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     return docReqLen;
   }
 
-  private static boolean processItemsRequest(byte[] buf, short start, short len,
+  private static boolean processItemsRequest(byte[] buf, short itemsBytesStart, short itemsBytesLen,
       short readerAuthStart, short readerAuthLen,
       DocumentRequest req) {
 
     //Now get the doc type out of the items
-    mDecoder.init(buf, start, len);
+    mDecoder.init(buf, itemsBytesStart, itemsBytesLen);
     if (mDecoder.readMajorType(CBORBase.TYPE_TAG) !=
         MdlSpecifications.CBOR_SEMANTIC_TAG_ENCODED_CBOR) {
       ISOException.throwIt(ISO7816.SW_DATA_INVALID);
@@ -446,6 +510,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     SEProvider.print(buf, itemsStart, itemsLen);
     SEProvider.print(buf, docTypeStart, docTypeLen);
     SEProvider.print(buf, nameSpacesStart, nameSpacesLen);
+
     //TODO currently just storing the requestInfo and it is not used.
     short requestInfo = mStructure[4];
     short requestInfoLen = mStructure[5];
@@ -457,68 +522,18 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     // Now get the document.
     MdocPresentationPkg doc = PresentationPkgStore.instance().findPackage(buf, docTypeStart,
         docTypeLen);
-    if (doc == null ||
-        (doc.isReaderAuthRequired() &&
-            !processReaderAuth(buf, start, len, readerAuthStart, readerAuthLen))) {
-      return false;
+    if (doc != null) {
+      // Now initialise the document request which will parse the name spaces and create internal
+      // mapping to stored data.
+      return req.init(doc, mStructure, buf, nameSpacesStart, nameSpacesLen,
+      itemsBytesStart, itemsBytesLen, readerAuthStart, readerAuthLen,
+          mScratchPad, (short) 0, (short) mScratchPad.length);
     }
-    // Now initialise the document request which will parse the name spaces and create internal
-    // mapping to stored data.
-    return req.init(doc, mStructure, buf, nameSpacesStart, nameSpacesLen,
-        mScratchPad, (short) 0, (short) mScratchPad.length);
+    return false;
     //TODO match individual items requested by the doc request with that in the document. If
     // not available then error must be returned for those items or the entire doc request.
   }
-  /*
-  private static boolean processItemsRequest(byte[] buf, short itemsStart, short itemsLen,
-      short readerAuthStart, short readerAuthLen, DocumentRequest req) {
-    //Now get the doc type out of the items
-    itemsStart = readTaggedCborByteString(buf, itemsStart, itemsLen, mRetVal);
-    itemsLen = mRetVal[0];
-    // read items request within this doc request to extract the doc type.
-    short[] str = MdlSpecifications.getStructure(MdlSpecifications.KEY_ITEMS_REQUEST);
-    MdlSpecifications.decodeStructure(str, mStructure, Context.mBuffer, itemsStart, itemsLen);
-    short docTypeStart = mStructure[0];
-    short docTypeLen = mStructure[1];
-    short nameSpacesStart = mStructure[2];
-    short nameSpacesLen = mStructure[3];
-    short requestInfo = mStructure[4];
-    short requestInfoLen = mStructure[5];
-    // document with the desired doc type must be present and if it requires reader
-    // authentication then reader authentication must be successful.
-    if (docTypeStart == (short) 0 || nameSpacesStart == (short) 0) {
-      return false;
-    }
-    // Now get the document.
-    MdocPresentationPkg doc = PresentationPkgStore.instance().findPackage(buf, docTypeStart,
-        docTypeLen);
-    if(doc == null ||
-        (doc.isReaderAuthRequired() &&
-            !processReaderAuth(buf,itemsStart, itemsLen, readerAuthStart, readerAuthLen))) {
-      return false;
-    }
-    // Now initialise the document request.
-    return req.init(doc, mStructure, buf, nameSpacesStart, nameSpacesLen);
-    //TODO match individual items requested by the doc request with that in the document. If
-    // not available then error must be returned for those items or the entire doc request.
-    }
-*/
-    /*
-    // TODO cache the data items such as signature which can be then used in handle device request.
-    deviceRequestLen = mRetVal[0];
-    short signStart = retVal[1];
-    short signLen = retVal[2];
-    authenticateReader(buffer, deviceRequestStart, deviceRequestLen, signStart,signLen, retVal);
-    // handle the device request and this returns the start and length of device response and MSO
-    // in retVal[0] and retVal[1]
-    handleDeviceRequest(buffer, deviceRequestStart, deviceRequestLen, retVal);
 
-     */
-
-
-  private static void terminateSession() {
-    reset();
-  }
 
   private static short getHeaderLength(short len) {
     byte headerLen = 4;
@@ -853,7 +868,8 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     encoder.encodeRawData(MdlSpecifications.nameSpaces, (short) 0,
         (short) MdlSpecifications.nameSpaces.length);
     encoder.encodeTag((byte) MdlSpecifications.CBOR_SEMANTIC_TAG_ENCODED_CBOR);
-    encoder.startByteString((short) 0); // empty
+    encoder.startByteString((short) 1); // empty
+    encoder.startMap((short)0);
     //"deviceAuth" : DeviceAuth
     encoder.encodeRawData(MdlSpecifications.deviceAuth, (short) 0,
         (short) MdlSpecifications.deviceAuth.length);
@@ -1204,7 +1220,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
                 Session.mBuffer[Session.BUF_LENGTH_OFFSET] +
                 SEProvider.AES_GCM_TAG_LENGTH);
         // Calculate the status.
-        if( remBytes > 256){
+        if( remBytes > 255){
           status = ISO7816.SW_BYTES_REMAINING_00;
         }else if(remBytes > 0){
           status = (short) (ISO7816.SW_BYTES_REMAINING_00 | (byte)remBytes);
@@ -1245,6 +1261,8 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
             mContext.mBuffer, (short)0, mContext.mBufWriteIndex[0]);
         Session.mBuffer[Session.BUF_LENGTH_OFFSET] = 0;
         mContext.mRemainingBytes[0] = -SEProvider.AES_GCM_TAG_LENGTH;
+        // Encryption is successful
+        mMsgCounter[DEVICE_MSG_COUNTER]++;
       } else{
         // no more data to process
         mContext.mRemainingBytes[0] = 0;
@@ -1285,6 +1303,12 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
   static short encodeBytes(CBOREncoder encoder, byte[] buf, short start, short end){
     short len = (short)(end - start);
     short bufLen = (short)(encoder.getBufferLength() - encoder.getCurrentOffset());
+    // if the buffer is full and more data requires to be encoded then that means that encoding
+    // has to be done in next getResponse cycle so throw an exception which will
+    // be handled in encodeData
+    if(bufLen == 0 && len > 0){
+      ISOException.throwIt(ISO7816.SW_UNKNOWN);
+    }
     if(len > bufLen){
       len = bufLen;
     }
