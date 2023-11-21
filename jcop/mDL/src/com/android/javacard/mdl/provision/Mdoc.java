@@ -1,4 +1,4 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.provision;
 
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
@@ -28,6 +28,7 @@ public class Mdoc {
     mTestCred[0] = false;
     mSlotId = slotId;
     mCredentialKey = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
+    SEProvider.instance().initECKey(mCredentialKey);
     mStorageKey = (AESKey) KeyBuilder.buildKey(
         KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
   }
@@ -53,6 +54,7 @@ public class Mdoc {
     return mCredentialKey;
   }
   public void create(short size, byte[] scratch, short start, short len){
+    SEProvider.initECKey(mCredentialKey);
     mCredentialKey.genKeyPair();
     SEProvider.instance().generateRandomData(scratch, start, (short)32);
     mStorageKey.setKey(scratch, start);
@@ -62,12 +64,14 @@ public class Mdoc {
     mTestCred[0] = false;
     ECPublicKey pub = ((ECPublicKey)mCredentialKey.getPublic());
     ECPrivateKey priv = ((ECPrivateKey)mCredentialKey.getPrivate());
-    short size = pub.getW(scratch,start);
-    Util.arrayFillNonAtomic(scratch, start, size,(byte)0);
-    pub.setW(scratch,start,size);
-    size = priv.getS(scratch,start);
-    Util.arrayFillNonAtomic(scratch, start, size,(byte)0);
-    priv.setS(scratch,start,size);
+    priv.clearKey();
+    pub.clearKey();
+//    short size = pub.getW(scratch,start);
+//    Util.arrayFillNonAtomic(scratch, start, size,(byte)0);
+//    pub.setW(scratch,start,size);
+//    size = priv.getS(scratch,start);
+//    Util.arrayFillNonAtomic(scratch, start, size,(byte)0);
+//    priv.setS(scratch,start,size);
     mStorageKey.clearKey();
     ProvisioningApplet.deletePackage(mSlotId);
   }

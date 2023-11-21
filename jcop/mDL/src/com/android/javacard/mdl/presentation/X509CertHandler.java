@@ -1,4 +1,4 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.presentation;
 
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
@@ -7,6 +7,7 @@ import javacard.framework.Util;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyBuilder;
+import javacard.security.KeyPair;
 
 // TODO this is a placeholder class until design is finalized. If KeyMint applet needs to be
 //  integrated then this class will be replaced by some shareable interface implemented by the
@@ -203,7 +204,7 @@ public class X509CertHandler {
   static short mStorageIndex;
   static short mPublicKeyCertStart;
   static short mPublicKeyCertLength;
-  private static ECPrivateKey mAttestKey;
+  private static KeyPair mAttestKey;
   private static short[] mRetVal;
 
   // Following methods are used to create certificates
@@ -580,7 +581,7 @@ public class X509CertHandler {
     // push tbs header
     short tbsStart = pushSequenceHeader(buf, stackPtr, len, (short) (tbsEnd - stackPtr));
     // sign the tbs - this is ASN.1 encoded sequence of two integers.
-    short signLen = seProvider.ecSign256(mAttestKey,
+    short signLen = seProvider.ecSign256((ECPrivateKey)mAttestKey.getPrivate(),
         buf,tbsStart,(short) (tbsEnd-tbsStart),scratch,
         (short) 0);
     // now push signature
@@ -611,8 +612,10 @@ public class X509CertHandler {
 
   public static void init(short size){
     mDataStorage = new byte[size];
-    mAttestKey = (ECPrivateKey) KeyBuilder
-        .buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, KeyBuilder.LENGTH_EC_FP_256, false);
+    mAttestKey = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
+//    mAttestKey = (ECPrivateKey) KeyBuilder
+//        .buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, KeyBuilder.LENGTH_EC_FP_256, false);
+    SEProvider.initECKey(mAttestKey);
     mPublicKeyCertLength = mPublicKeyCertStart = mStorageIndex = 0;
     mRetVal = JCSystem.makeTransientShortArray((short)16, JCSystem.CLEAR_ON_DESELECT);
   }
@@ -630,7 +633,8 @@ public class X509CertHandler {
   public static void storeAttestationPrivateKey(byte[] buf, short start, short len){
     if(mDataStorage == null || mAttestKey == null) return;
     JCSystem.beginTransaction();
-    mAttestKey.setS(buf, start, len);
+    ECPrivateKey key = (ECPrivateKey) mAttestKey.getPrivate();
+    key.setS(buf, start, len);
     JCSystem.commitTransaction();
 
   }

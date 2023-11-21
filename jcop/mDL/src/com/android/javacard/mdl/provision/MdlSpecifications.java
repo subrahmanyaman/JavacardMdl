@@ -1,4 +1,4 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.provision;
 
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;

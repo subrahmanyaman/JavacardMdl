@@ -1,4 +1,4 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.presentation;
 
 import javacard.framework.Shareable;
 
@@ -11,6 +11,7 @@ import javacard.framework.Shareable;
  *
  */
 public interface MdlPresentationPkgStore extends Shareable {
+  public static final byte SERVICE_ID = 2;
   MdocPresentationPkg findPackage(byte[] id, short start, short len);
   short getMaxSlotCount();
   MdocPresentationPkg getPackage(byte slot);

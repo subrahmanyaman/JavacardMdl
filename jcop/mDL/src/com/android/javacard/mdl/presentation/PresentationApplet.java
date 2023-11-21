@@ -1,10 +1,10 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.presentation;
 
-import com.android.javacard.mdl.CBORDecoder;
-import com.android.javacard.mdl.CBOREncoder;
-import com.android.javacard.mdl.CBOREncoderCalc;
-import com.android.javacard.mdl.Context;
-import com.android.javacard.mdl.PresentationPkgStore;
+import com.android.javacard.mdl.presentation.CBORDecoder;
+import com.android.javacard.mdl.presentation.CBOREncoder;
+import com.android.javacard.mdl.presentation.CBOREncoderCalc;
+import com.android.javacard.mdl.presentation.Context;
+import com.android.javacard.mdl.presentation.PresentationPkgStore;
 
 import javacard.framework.AID;
 import javacard.framework.JCSystem;
@@ -36,6 +36,8 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
   private static final byte DEVICE_MSG_COUNTER = 1;
   public static final byte[] AID_NDEF_TAG_APPLET = {(byte) 0xD2, 0x76, 0x00, 0x00, (byte) 0x85,
       0x01, 0x01};
+  public static final byte[] DIRECT_ACCESS_PROVISIONING_APPLET_ID = {
+      (byte) 0xA0, 0x00, 0x00, 0x02, 0x48, 0x00, 0x01, 0x01, 0x01};
 
   // The NDEF Data File is Handover Select Message, which consists of 3 records as follows:
   // 1. Handover Select Record, that consists of Alternative Carrier Record consisting of
@@ -329,7 +331,7 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
     // extract the request from 0x53 tag
     short bufIndex = extractRequest(mContext.mBuffer, (short) mContext.mBuffer.length, mRetVal);
     short bufLen = mRetVal[0];
-    com.android.javacard.mdl.SEProvider.print(mContext.mBuffer, bufIndex, bufLen);
+    com.android.javacard.mdl.presentation.SEProvider.print(mContext.mBuffer, bufIndex, bufLen);
     short requestType = Session.isSessionInitialized() ? MdlSpecifications.IND_SESSION_DATA :
         MdlSpecifications.IND_SESSION_ESTABLISHMENT;
     short offset = MdlSpecifications.decodeStructure(MdlSpecifications.getStructure(requestType),
@@ -1671,12 +1673,24 @@ public class PresentationApplet extends Applet implements ExtendedLength, MdlSer
   // -------- MdlService Interface implementation
   @Override
   public Shareable getShareableInterfaceObject(AID clientAID, byte parameter) {
+
     byte[] buf = new byte[16];
     byte len = clientAID.getBytes(buf, (short)0);
-    if(Util.arrayCompare(buf,(short)0, AID_NDEF_TAG_APPLET,(short) 0,len) !=0) {
-      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    switch(parameter) {
+      case MdlService.SERVICE_ID:
+        if(Util.arrayCompare(buf,(short)0, AID_NDEF_TAG_APPLET,(short) 0,len) !=0) {
+          ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+        }
+        return this;
+      case MdlPresentationPkgStore.SERVICE_ID:
+        if(Util.arrayCompare(buf,(short)0, DIRECT_ACCESS_PROVISIONING_APPLET_ID,(short) 0,len) !=0) {
+          ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+        }
+        return mPresentationPkgStore;
+      default:
+        ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
-    return this;
+    return null;
   }
 
   @Override

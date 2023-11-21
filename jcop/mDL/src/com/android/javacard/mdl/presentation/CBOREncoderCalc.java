@@ -1,7 +1,8 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.presentation;
 
-import com.android.javacard.mdl.CBORBase;
-import com.android.javacard.mdl.CBOREncoder;
+import com.android.javacard.mdl.presentation.CBORBase;
+import com.android.javacard.mdl.presentation.CBOREncoder;
+
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.Util;

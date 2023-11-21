@@ -1,4 +1,4 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.presentation;
 
 /**
  * Thi is the implementation of presentation package store shareable interface and it is

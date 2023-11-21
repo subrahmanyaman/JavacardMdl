@@ -1,4 +1,4 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.presentation;
 
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
@@ -27,12 +27,14 @@ public class SEProvider {
   public static final short ES512 = 3;
   // parameters offset
   public static final short PARAM_OFF_AES_GCM_OUT_LEN = 0; 
-  public static final short PARAM_OFF_PURPOSE = 0;  
+  public static final short PARAM_OFF_PURPOSE = 2;  
   public static final short PARAMS_COUNT = 2;
   private Signature signerWithSha256;
   private KeyPair ecKeyPair;
+  public static short PROVIDER_INST_PRESENTATION = 1;
+  public static short PROVIDER_INST_PROVISION = 0;
   private static SEProvider inst;
- private static AEADCipher aesGcmCipher;
+ private AEADCipher aesGcmCipher;
   private RandomData mRng;
   // static final variables
   // --------------------------------------------------------------
@@ -49,14 +51,14 @@ public class SEProvider {
   static final byte secp256r1_H = 1;
   // --------------------------------------------------------------
   private short[] parameters;
-  public static SEProvider instance(){
+  public static SEProvider instance() {
     if(inst == null){
       inst = new SEProvider();
       X509CertHandler.init((short)4096);
     }
     return inst;
   }
-  private SEProvider(){
+  private SEProvider() {
     initStatics();
     parameters = JCSystem.makeTransientShortArray(PARAMS_COUNT, JCSystem.CLEAR_ON_RESET);
     ecKeyPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
@@ -132,7 +134,7 @@ public class SEProvider {
         };
   }
   
-  public void initECKey(KeyPair ecKeyPair) {
+  public static void initECKey(KeyPair ecKeyPair) {
     ECPrivateKey privKey = (ECPrivateKey) ecKeyPair.getPrivate();
     ECPublicKey pubkey = (ECPublicKey) ecKeyPair.getPublic();
     pubkey.setFieldFP(secp256r1_P, (short) 0, (short) secp256r1_P.length);
@@ -185,10 +187,9 @@ public class SEProvider {
       short authDataStart,
       short authDataLen){
     // Create the cipher
-    short mode = encrypt ? (short) Cipher.MODE_ENCRYPT : (short) Cipher.MODE_ENCRYPT;
+    short mode = encrypt ? (short) Cipher.MODE_ENCRYPT : (short) Cipher.MODE_DECRYPT;
     initCipher(key,nonce,start,len, authData, authDataStart, authDataLen, mode);
     parameters[PARAM_OFF_PURPOSE] = mode;
-
   }
   public short doAesGcmOperation(
       byte[] inData, short inDataStart, short inDataLen,
@@ -199,6 +200,8 @@ public class SEProvider {
     //try {
       if(!justUpdate) {
         len = (short) (aesGcmCipher.doFinal(inData, inDataStart, inDataLen, outputBuf, (short) 0));
+        parameters[PARAM_OFF_PURPOSE] = 0;
+        parameters[PARAM_OFF_AES_GCM_OUT_LEN] = 0;
       }else{
         len = (short) (aesGcmCipher.update(inData, inDataStart, inDataLen, outputBuf, (short) 0));
         parameters[PARAM_OFF_AES_GCM_OUT_LEN] += (short) (inDataLen - len);

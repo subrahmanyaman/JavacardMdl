@@ -1,4 +1,4 @@
-package com.android.javacard.mdl;
+package com.android.javacard.mdl.presentation;
 
 import javacard.framework.APDU;
 import javacard.framework.ISO7816;
